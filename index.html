@@ -29,21 +29,21 @@ h2{font-size:15px;font-weight:600;color:var(--mu);margin:0 0 8px}
 .seg.sent{background:#123a22;border-left-color:#1f9d57}
 .seg.sent::after{content:" ✔ al aire";font-size:.65em;color:#58e08f;font-weight:700;white-space:nowrap}
 .seg.sent.on{background:#1b5a3a;border-left-color:var(--ac)}
-#im{padding:10px 12px;color:var(--mu);font-style:italic;font-size:var(--fs,18px)}#im:empty{display:none}textarea{width:100%;flex:1;min-height:140px;resize:none;background:var(--pn);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:12px;font:600 26px/1.3 "Segoe UI",system-ui,sans-serif}
+#im{padding:10px 12px;color:var(--mu);font-style:italic;font-size:var(--fs,18px)}#im:empty{display:none}textarea{width:100%;flex:1;min-height:100px;resize:none;background:var(--pn);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:12px;font:600 26px/1.3 "Segoe UI",system-ui,sans-serif}
 .row{display:flex;gap:8px;margin:10px 0}
 .row button{flex:1}
 .seg-b.sel{background:var(--ac);border-color:var(--ac)}
 #send{width:100%;padding:18px;font-size:22px;font-weight:700;background:var(--ok);border-color:var(--ok)}
 #air{margin-top:12px;padding:10px 12px;border:1px dashed var(--ln);border-radius:6px;color:var(--mu);font-size:15px}
 #air b{display:block;color:var(--tx);font-weight:600;margin-top:2px}
-#hist{max-height:230px;overflow:auto;display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+#hist{max-height:170px;overflow:auto;display:flex;flex-direction:column;gap:6px;flex-shrink:0}
 .hi{display:flex;gap:8px;align-items:center;background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:8px 10px;font-size:14px}
 .hi span{flex:1;cursor:pointer}.hi small{color:var(--mu)}
 .hi button{padding:6px 10px;font-size:13px;background:var(--ok);border-color:var(--ok)}
 section:last-child{overflow:auto}
 #pv{white-space:pre-wrap;font:600 15px/1.3 Consolas,monospace;color:var(--mu);background:#0b1117;border:1px dashed var(--ln);border-radius:6px;padding:8px 10px;margin-bottom:10px;min-height:42px}
 .pl{display:flex;justify-content:space-between;gap:12px}.pl small{color:var(--mu);font-weight:400;white-space:nowrap}.pl small.bad{color:#ff6b64;font-weight:700}
-#st{margin:0 0 12px;min-height:50px;display:flex;align-items:center;justify-content:center;border:2px dashed var(--ln);border-radius:6px;padding:6px 10px;color:var(--mu);font-weight:800;font-size:20px;line-height:1.2;text-align:center}
+#st{margin:0 0 12px;min-height:50px;display:flex;align-items:center;justify-content:center;border:2px dashed var(--ln);border-radius:6px;padding:6px 10px;color:var(--mu);font-weight:800;font-size:18px;line-height:1.2;text-align:center}
 #st.ok{background:#123a22;color:#58e08f;border:2px solid #1f9d57}
 #st.bad{background:#44181a;color:#ff7a73;border:2px solid #d6453d}
 .row #send{flex:0 1 380px}
@@ -70,7 +70,7 @@ section:last-child{overflow:auto}
   <label>Máx. caracteres por renglón <input type="number" id="mx" value="40" min="10" max="200"></label>
   <label>Cortar transcripción cada <input type="number" id="cl" value="60" min="0" max="300"> car. <span style="opacity:.7">(0 = solo al pausar)</span></label>
   <span class="fs">Letra transcripción <button id="fm">A−</button><button id="fp">A+</button></span>
-  <small id="ver" style="color:var(--mu)">versión 15-oct-A</small>
+  <small id="ver" style="color:var(--mu)">versión 16-oct-A</small>
   <button id="mic">🎙 Empezar a escuchar</button>
 </div>
 <main>
@@ -85,6 +85,7 @@ section:last-child{overflow:auto}
       <button class="seg-b sel" id="mq">Con comillas</button>
       <button class="seg-b" id="mt">Titular (sin comillas)</button>
     </div>
+    <div class="row" style="margin-top:0"><button class="seg-b" id="mf" title="Se manda tal cual lo escribas: no agrega ni quita comillas">Libre</button></div>
     <div id="pvw"><div id="pv"></div><div id="cnt"></div></div><div id="st"></div>
     <div class="row" style="justify-content:center"><button id="send" disabled>▶ AIRE (Ctrl + G)</button></div>
     <div class="row" style="justify-content:center"><button id="cls" class="del">Borrar texto</button></div>
@@ -96,7 +97,8 @@ section:last-child{overflow:auto}
 <div id="toast"></div>
 <script>
 const $=id=>document.getElementById(id);
-let fh=null,listening=false,rec=null,quotes=true,cutWords=0,LINES=2;
+let fh=null,listening=false,rec=null,quotes=true,LINES=2,sess=0,free=false;
+const utt={};   /* tramos de voz: sus renglones y cuántas palabras se descartaron (solo tras 'Nueva entrevista') */
 
 /* guardar el archivo elegido para no volver a pedirlo */
 const db=()=>new Promise((ok,no)=>{const r=indexedDB.open('zocalos',1);r.onupgradeneeded=()=>r.result.createObjectStore('k');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
@@ -147,7 +149,8 @@ function wrap(l,max){
   if(cur)out.push(cur);return out;
 }
 function build(){
-  let t=$('ed').value.split(/\r?\n/).map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean).join(LINES===1?' ':'\n').replace(/^["“”]+|["“”]+$/g,'').trim();
+  let t=$('ed').value.split(/\r?\n/).map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean).join(LINES===1?' ':'\n').trim();
+  if(!free)t=t.replace(/^["“”]+|["“”]+$/g,'').trim();
   if(!t)return '';
   if($('up').checked)t=t.toLocaleUpperCase('es');
   if(quotes)t='"'+t+'"';
@@ -156,10 +159,15 @@ function build(){
 }
 let okText=null,sentText=null,sending=false;
 function sizePv(){
-  const w=$('pvw'),avail=Math.max(120,w.clientWidth-120);
-  w.style.fontSize=Math.max(9,Math.min(28,Math.floor(avail/(MAX()*0.6))))+'px';
-  $('pv').style.width=MAX()+'ch';
-  $('pv').style.minHeight=(LINES*1.3)+'em';
+  const w=$('pvw'),pe=$('pv'),m=MAX();
+  const pr=document.createElement('span');
+  pr.style.cssText='position:absolute;visibility:hidden;white-space:pre;font:600 100px Consolas,"Courier New",monospace';
+  pr.textContent='0'.repeat(20);document.body.appendChild(pr);
+  const ch100=pr.getBoundingClientRect().width/20;pr.remove();   /* ancho real de un carácter a 100px */
+  const ch=(w.clientWidth-40)/(m+8);                              /* lo que entra: caja + conteo + márgenes */
+  w.style.fontSize=Math.max(6,Math.min(28,Math.floor(ch/ch100*100)))+'px';
+  pe.style.width=m+'ch';
+  pe.style.minHeight=(LINES*1.3)+'em';
 }
 window.addEventListener('resize',sizePv);
 /* dibuja la cajita en vivo con lo que hay en el cuadro, sin dar el visto bueno */
@@ -174,16 +182,15 @@ function estado(){
   okText=null;b.disabled=true;
   if(!t){st.className='';st.textContent='Escribí o tocá una frase';return}
   if(t===sentText){st.className='ok';st.textContent='✔ Ya está al aire';return}
-  const L=t.trim().split(/\r?\n/);
+  const L=t.trim().split(/\r?\n/),tot=L.join(' ').length,cap=LINES*m;
   if(L.length>LINES||L.some(l=>l.length>m)){
-    let ex=0;
-    if(LINES===1)ex=L.join(' ').length-m;
-    else L.forEach((l,i)=>{ex+=i>=LINES?l.length+1:Math.max(l.length-m,0)});
+    let n=tot-cap;
+    if(n<1){n=0;L.forEach((l,i)=>{n+=i>=LINES?l.length+1:Math.max(l.length-m,0)});n=Math.max(n,1)}
     st.className='bad';
-    st.textContent='✖ MUY LARGO · sobran '+(LINES===1?'':'unos ')+Math.max(ex,1)+' caracteres';
+    st.textContent='✖ MUY LARGO · '+tot+' caracteres (entran '+cap+') · sobran '+n+(LINES===1?'':' o más');
     return;
   }
-  st.className='ok';st.textContent='✔ ENTRA BIEN · '+L.length+(L.length>1?' renglones':' renglón');
+  st.className='ok';st.textContent='✔ ENTRA BIEN · '+L.length+(L.length>1?' renglones':' renglón')+' · '+tot+' caracteres';
   okText=t;b.disabled=false;
 }
 function pv(){renderBox();estado()}
@@ -222,7 +229,7 @@ function renderHist(){
     const d=document.createElement('div');d.className='hi';
     const m=document.createElement('small');m.textContent=it.h;
     const s=document.createElement('span');s.textContent=it.t.replace(/\r?\n/g,' ');
-    s.onclick=()=>{$('ed').value=it.t.trim();setMode(/^["“]/.test(it.t.trim()))};
+    s.onclick=()=>{$('ed').value=it.t.trim();setMode('libre')};
     const b=document.createElement('button');b.textContent='Reenviar';
     b.onclick=async()=>{if(await write(it.t)){showAir(it.t);markSent(it.t);addHist(it.t);toast('✔ Enviado y guardado en el txt')}};
     d.append(m,s,b);h.appendChild(d);
@@ -231,20 +238,32 @@ function renderHist(){
 renderHist();
 $('send').onclick=send;
 $('cls').onclick=()=>{$('ed').value='';sentText=null;pv();document.querySelectorAll('.seg.on').forEach(x=>x.classList.remove('on'))};
-function setMode(q){quotes=q;$('mq').classList.toggle('sel',q);$('mt').classList.toggle('sel',!q);pv()}
+/* modos: true = con comillas, false = titular (sin comillas), 'libre' = tal cual se escribe */
+function setMode(m){free=(m==='libre');quotes=(m===true);$('mq').classList.toggle('sel',m===true);$('mt').classList.toggle('sel',m===false);$('mf').classList.toggle('sel',free);pv()}
 $('ed').oninput=pv;
 $('mq').onclick=()=>setMode(true);
 $('mt').onclick=()=>setMode(false);
+$('mf').onclick=()=>setMode('libre');
 
 /* transcripción */
-function add(t){
-  if(!t)return;
+function makeSeg(t){
   const d=document.createElement('div');d.className='seg';d.textContent=t;d.dataset.t=t;
   d.onclick=()=>{d.classList.toggle('on');fillEd()};
-  const l=$('list');l.insertBefore(d,$('im'));
-  while(l.children.length>151)l.firstChild.remove();
-  l.scrollTop=l.scrollHeight;
   return d;
+}
+/* muestra los renglones de un tramo de voz; reutiliza los que no cambiaron y rehace los que Chrome corrigió */
+function show(u,texts){
+  const l=$('list');
+  let k=0;
+  while(k<texts.length&&k<u.els.length&&u.els[k].isConnected&&u.els[k].dataset.t===texts[k])k++;
+  u.els.slice(k).forEach(x=>x.remove());u.els.length=k;
+  let ref=k?u.els[k-1]:null;
+  for(let j=k;j<texts.length;j++){
+    const d=makeSeg(texts[j]);
+    if(ref&&ref.isConnected)ref.after(d);else l.insertBefore(d,$('im'));
+    u.els.push(d);ref=d;
+  }
+  while(l.children.length>151)l.firstChild.remove();
 }
 function fillEd(){$('ed').value=[...document.querySelectorAll('.seg.on')].map(x=>x.dataset.t).join(' ');pv()}
 function ui(){$('mic').textContent=listening?'⏹ Dejar de escuchar':'🎙 Empezar a escuchar';$('mic').className=listening?'on':''}
@@ -255,22 +274,25 @@ function start(){
   rec.onresult=e=>{
     let im='';
     for(let i=e.resultIndex;i<e.results.length;i++){
-      const r=e.results[i];
-      const w=r[0].transcript.trim().split(/\s+/).filter(Boolean).slice(cutWords);
+      const r=e.results[i],key=sess+':'+i;
+      const u=utt[key]||(utt[key]={els:[],base:0,total:0});
+      const all=r[0].transcript.trim().split(/\s+/).filter(Boolean);
+      u.total=all.length;
+      const w=all.slice(u.base);
+      /* siempre se arma desde el texto completo que entrega Chrome: así nunca se pierden ni se repiten palabras */
       if(r.isFinal){
-        const k=takeChunks(w,0);k.done.forEach(x=>add(x));
-        if(k.rest.length)add(k.rest.join(' '));
-        cutWords=0;
+        const k=takeChunks(w,0);
+        show(u,k.done.concat(k.rest.length?[k.rest.join(' ')]:[]));
       }else{
-        const k=takeChunks(w,2);k.done.forEach(x=>add(x));
-        cutWords+=k.done.reduce((a,x)=>a+x.split(' ').length,0);
+        const k=takeChunks(w,2);
+        show(u,k.done);
         im+=k.rest.join(' ')+' ';
       }
     }
-    $('im').textContent=im;$('list').scrollTop=$('list').scrollHeight;
+    $('im').textContent=im.trim();$('list').scrollTop=$('list').scrollHeight;
   };
   rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;ui();toast('Permití el micrófono en el navegador',1)}};
-  rec.onend=()=>{cutWords=0;if(listening){try{rec.start()}catch(_){setTimeout(()=>{if(listening)start()},500)}}};
+  rec.onend=()=>{sess++;if(listening){try{rec.start()}catch(_){setTimeout(()=>{if(listening)start()},500)}}};
   listening=true;ui();rec.start();
 }
 $('mic').onclick=()=>{if(listening){listening=false;rec&&rec.stop();ui()}else start()};
@@ -280,7 +302,7 @@ function showAir(t){const a=$('air');a.innerHTML='Último enviado <i>✔ guardad
 $('new').onclick=()=>{
   if(!confirm('¿Limpiar la transcripción para una nueva entrevista?\n(el historial de frases enviadas no se borra)'))return;
   document.querySelectorAll('.seg').forEach(x=>x.remove());
-  const t=$('im').textContent.trim();if(t)cutWords+=t.split(/\s+/).length;
+  for(const k in utt){utt[k].els=[];utt[k].base=utt[k].total}
   $('im').textContent='';
 };
 /* tamaño de letra de la transcripción */
