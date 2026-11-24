@@ -72,10 +72,10 @@ section:last-child{overflow:auto}
   <label>Máx. caracteres por renglón <input type="number" id="mx" value="40" min="10" max="200"></label>
   <label>Cortar transcripción cada <input type="number" id="cl" value="60" min="0" max="300"> car. <span style="opacity:.7">(0 = solo al pausar)</span></label>
   <span class="fs">Letra transcripción <button id="fm">A−</button><button id="fp">A+</button></span>
-  <small id="ver" style="color:var(--mu)">versión 24-nov-A</small>
+  <small id="ver" style="color:var(--mu)">versión 24-nov-B</small>
   <button id="mic">🎙 Empezar a escuchar</button>
 </div>
-<div id="perm">⚠ Falta permiso para escribir el txt · tocá acá y elegí «Permitir»</div>
+<div id="perm">⚠ Falta permiso para escribir el txt · tocá acá para arreglarlo</div>
 <main>
   <section>
     <div class="hd"><h2>Lo que se dice (tocá una o varias frases)</h2><button id="new">🗑 Nueva entrevista</button></div>
@@ -111,10 +111,27 @@ const idbSet=async(k,v)=>{try{const d=await db();await new Promise(ok=>{const t=
 function toast(m,err){const t=$('toast');t.textContent=m;t.className='show'+(err?' err':'');clearTimeout(toast.t);toast.t=setTimeout(()=>t.className='',2500)}
 function showFile(){const f=$('file');f.textContent=fh?fh.name:'Sin archivo elegido';f.className=fh?'':'no'}
 
-$('pick').onclick=async()=>{
-  if(!window.showOpenFilePicker){toast('Abrí esta página con Chrome o Edge',1);return}
-  try{[fh]=await showOpenFilePicker({types:[{description:'Texto',accept:{'text/plain':['.txt']}}]});await idbSet('fh',fh);showFile();failOff();try{await fh.requestPermission({mode:'readwrite'})}catch(e){}checkPerm()}catch(e){}
-};
+/* Elegir el txt: con el selector de "guardar" Chrome da el permiso de escritura al instante */
+async function pickFile(){
+  if(!window.showSaveFilePicker&&!window.showOpenFilePicker){toast('Abrí esta página con Chrome o Edge',1);return}
+  const tipos=[{description:'Texto',accept:{'text/plain':['.txt']}}];
+  let h=null;
+  try{
+    h=window.showSaveFilePicker
+      ?await showSaveFilePicker({id:'zocalos-txt',suggestedName:(fh&&fh.name)||'Datalinq.txt',types:tipos})
+      :(await showOpenFilePicker({id:'zocalos-txt',types:tipos}))[0];
+  }catch(e){
+    if(e&&e.name==='AbortError')return;
+    try{h=(await showOpenFilePicker({types:tipos}))[0]}
+    catch(e2){if(!(e2&&e2.name==='AbortError'))toast('No se pudo elegir el archivo: '+(e2.message||e2),1);return}
+  }
+  fh=h;await idbSet('fh',fh);showFile();failOff();
+  try{await fh.requestPermission({mode:'readwrite'})}catch(e){}
+  await checkPerm();
+  const falta=$('perm').style.display==='block';
+  toast(falta?'Archivo elegido, pero falta el permiso de escritura':'✔ Archivo elegido: '+h.name,falta);
+}
+$('pick').onclick=pickFile;
 (async()=>{fh=await idbGet('fh')||null;showFile();checkPerm();try{$('up').checked=localStorage.up!=='0';if(localStorage.mx)$('mx').value=localStorage.mx;if(localStorage.cl)$('cl').value=localStorage.cl}catch(e){}})();
 $('cl').onchange=()=>{try{localStorage.cl=CUTLEN()}catch(e){}$('cl').value=CUTLEN()};
 $('mx').onchange=()=>{try{localStorage.mx=MAX()}catch(e){}$('mx').value=MAX();pv()};
@@ -131,7 +148,14 @@ async function checkPerm(){
   try{const p=await timeout(fh.queryPermission({mode:'readwrite'}),3000,'permiso');b.style.display=p==='granted'?'none':'block'}
   catch(e){b.style.display='block'}
 }
-$('perm').onclick=async()=>{try{if(await fh.requestPermission({mode:'readwrite'})==='granted')failOff()}catch(e){}checkPerm()};
+/* aviso amarillo: pide el permiso y, si Chrome no lo da, abre el selector para volver a elegir el archivo */
+$('perm').onclick=async()=>{
+  let r;
+  try{r=await fh.requestPermission({mode:'readwrite'})}catch(e){r='error'}
+  if(r==='granted'){failOff();toast('✔ Permiso concedido');checkPerm();return}
+  toast('Chrome no dio el permiso. Elegí el archivo otra vez.',1);
+  await pickFile();
+};
 window.addEventListener('focus',checkPerm);
 async function write(txt){
   if(!fh){fail('no hay archivo elegido. Tocá "Elegir archivo txt" (arriba a la izquierda).');return false}
@@ -141,7 +165,7 @@ async function write(txt){
     if(p!=='granted'){
       $('perm').style.display='block';
       p=await timeout(fh.requestPermission(o),15000,'permiso');
-      if(p!=='granted'){fail('Chrome no dio permiso para escribir el txt. Tocá el aviso amarillo de arriba o volvé a elegir el archivo.');return false}
+      if(p!=='granted'){fail('Chrome no dio permiso para escribir el txt. Tocá el aviso amarillo de arriba (si no resulta, "Elegir archivo txt").');return false}
     }
     const w=await timeout(fh.createWritable(),8000,'abrir el archivo');
     await timeout(w.write(txt),8000,'escribir');
